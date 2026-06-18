@@ -1,0 +1,50 @@
+version: "3.8"
+
+services:
+  whatsapp_hub_api:
+    image: whatsapp-hub:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/hub_db
+      - META_GRAPH_VERSION=${META_GRAPH_VERSION:-v19.0}
+      - META_PHONE_ID=${META_PHONE_ID}
+      - META_TOKEN=${META_TOKEN}
+      - META_VERIFY_TOKEN=${META_VERIFY_TOKEN}
+      - CHATWOOT_URL=${CHATWOOT_URL}
+      - CHATWOOT_ACCOUNT_ID=${CHATWOOT_ACCOUNT_ID:-1}
+      - CHATWOOT_ADMIN_TOKEN=${CHATWOOT_ADMIN_TOKEN}
+      - N8N_WEBHOOK_BASE_URL=${N8N_WEBHOOK_BASE_URL}
+      - SOFTDESK_URL=${SOFTDESK_URL}
+      - SOFTDESK_TOKEN=${SOFTDESK_TOKEN}
+      - AGENT_SIGNATURE_FORMAT=${AGENT_SIGNATURE_FORMAT}
+      - USE_AGENT_FIRST_NAME=${USE_AGENT_FIRST_NAME:-true}
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    networks:
+      - hub_net
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=hub_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager # Mantém o BD no mesmo nó para persistência do volume local
+    networks:
+      - hub_net
+
+volumes:
+  postgres_data:
+
+networks:
+  hub_net:
+    driver: overlay

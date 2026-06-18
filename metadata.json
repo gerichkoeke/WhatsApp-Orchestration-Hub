@@ -1,0 +1,6 @@
+{
+  "name": "WhatsApp Orchestration Hub",
+  "description": "Hub interno atuando como middleware entre Chatwoot, Meta API, n8n e Softdesk.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
