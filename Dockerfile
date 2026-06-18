@@ -14,11 +14,9 @@ WORKDIR /app
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
-
-# Add drizzle output if necessary
-COPY --from=builder /app/drizzle ./drizzle
+COPY --from=builder /app/drizzle.config.ts ./
+COPY --from=builder /app/src/db ./src/db
 
 EXPOSE 3000
 
-# Start script should handle migration or it can be run manually
 CMD ["node", "dist/server.cjs"]

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { processedMessages, hubLogs } from '../db/schema.js';
+import { processedMessages, hubLogs, instances } from '../db/schema.js';
 import { sendTextMessage } from '../services/meta.js';
 import { addPrivateNote } from '../services/chatwoot.js';
 import { eq } from 'drizzle-orm';
@@ -8,26 +8,39 @@ import { triggerN8nWebhook } from '../services/n8n.js';
 
 export const webhooksRouter = Router();
 
-// Meta Webhook Verification
-webhooksRouter.get('/meta', (req, res) => {
+// Meta Webhook Verification per instance
+webhooksRouter.get('/meta/:instanceName', async (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
+  const { instanceName } = req.params;
 
-  if (mode && token) {
-    if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
-      console.log('WEBHOOK_VERIFIED');
-      return res.status(200).send(challenge);
-    } else {
-      return res.sendStatus(403);
+  try {
+    if (!db) throw new Error('Database not connected');
+    const instanceList = await db.select().from(instances).where(eq(instances.name, instanceName));
+    if (instanceList.length === 0) return res.sendStatus(404);
+    
+    const verifyToken = instanceList[0].verifyToken;
+
+    if (mode && token) {
+      if (mode === 'subscribe' && token === verifyToken) {
+        console.log(`WEBHOOK_VERIFIED for ${instanceName}`);
+        return res.status(200).send(challenge);
+      } else {
+        return res.sendStatus(403);
+      }
     }
+  } catch (error) {
+    return res.status(500).send('Database Error');
   }
   return res.sendStatus(400);
 });
 
-// Meta Webhook Incoming messages
-webhooksRouter.post('/meta', async (req, res) => {
+// Meta Webhook Incoming messages per instance
+webhooksRouter.post('/meta/:instanceName', async (req, res) => {
   const body = req.body;
+  const { instanceName } = req.params;
+  
   if (body.object) {
     if (
       body.entry &&
@@ -43,7 +56,11 @@ webhooksRouter.post('/meta', async (req, res) => {
       
       // Store incoming message in DB to keep track of interactions
       if (db) {
+        const instanceList = await db.select().from(instances).where(eq(instances.name, instanceName));
+        const instanceId = instanceList[0]?.id;
+      
         await db.insert(processedMessages).values({
+          instanceId: instanceId,
           chatwootMessageId: null,
           conversationId: null, // to be updated later if needed
           metaMessageId: metaMessageId,
@@ -53,9 +70,7 @@ webhooksRouter.post('/meta', async (req, res) => {
         }).onConflictDoNothing(); // Prevent duplicate processing if Meta retries
       }
       
-      // If using Chatwoot Custom Inbox, we should forward this message to Chatwoot's API.
-      // If using native setup but routing via proxy, we forward to n8n or Chatwoot appropriately.
-      console.log(`Received incoming message from ${from}`);
+      console.log(`Received incoming message on ${instanceName} from ${from}`);
     }
     return res.status(200).send('EVENT_RECEIVED');
   } else {
@@ -63,9 +78,18 @@ webhooksRouter.post('/meta', async (req, res) => {
   }
 });
 
-// Endpoint for chatwoot webhook
-webhooksRouter.post('/chatwoot', async (req, res) => {
+// Endpoint for chatwoot webhook per instance
+webhooksRouter.post('/chatwoot/:instanceName', async (req, res) => {
   const payload = req.body;
+  const { instanceName } = req.params;
+  
+  let instanceId: number | undefined;
+  
+  if (db) {
+    const instanceList = await db.select().from(instances).where(eq(instances.name, instanceName));
+    if (instanceList.length === 0) return res.status(404).send('Instance not found');
+    instanceId = instanceList[0].id;
+  }
   
   if (payload.event !== 'message_created') {
     return res.status(200).send('Ignoring non-message event');
@@ -131,12 +155,13 @@ webhooksRouter.post('/chatwoot', async (req, res) => {
 
   try {
     // Send to Meta
-    const metaResponse = await sendTextMessage(phoneNumber.replace('+', ''), finalMessage);
+    const metaResponse = await sendTextMessage(instanceName, phoneNumber.replace('+', ''), finalMessage);
     const metaMessageId = metaResponse?.messages?.[0]?.id || '';
     
     // Log successful format send
     if (db) {
        await db.insert(processedMessages).values({
+         instanceId,
          chatwootMessageId,
          conversationId: String(conversation.id),
          metaMessageId,
@@ -155,11 +180,12 @@ webhooksRouter.post('/chatwoot', async (req, res) => {
     
     // Add private note on failure
     if (conversation?.id) {
-      await addPrivateNote(conversation.id, `Hub Error: Falha ao enviar mensagem para a Meta. ${error.message}`);
+      await addPrivateNote(instanceName, conversation.id, `Hub Error: Falha ao enviar mensagem para a Meta. ${error.message}`);
     }
 
     if (db) {
       await db.insert(hubLogs).values({
+        instanceId,
         level: 'error',
         message: 'Failed to process Chatwoot webhook',
         metadata: JSON.stringify({ error: error.message, payload }),

@@ -6,6 +6,7 @@ import { createServer as createViteServer } from 'vite';
 
 import { webhooksRouter } from './src/routes/webhooks.js';
 import { apiRouter } from './src/routes/api.js';
+import { instancesRouter } from './src/routes/instances.js';
 
 async function startServer() {
   const app = express();
@@ -29,7 +30,8 @@ async function startServer() {
 
   // Mount API endpoints
   app.use('/webhooks', webhooksRouter);
-  app.use('/', apiRouter);
+  app.use('/instance', instancesRouter);
+  app.use('/api/message', apiRouter); // mapped /api/message prefix for semantics similar to Evolution API
 
   // Status/Health
   app.get('/api/health', (req, res) => {
