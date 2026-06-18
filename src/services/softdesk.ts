@@ -26,7 +26,14 @@ export const searchClientByPhone = async (phone: string) => {
 
 export const createTicket = async (data: any) => {
   const client = getSoftdeskClient();
-  // Example endpoint
   const response = await client.post(`/api/chamados`, data);
+  return response.data;
+};
+
+export const addTicketInteraction = async (ticketId: string | number, text: string) => {
+  const client = getSoftdeskClient();
+  const response = await client.post(`/api/chamados/${ticketId}/interacao`, {
+    descricao: text,
+  });
   return response.data;
 };

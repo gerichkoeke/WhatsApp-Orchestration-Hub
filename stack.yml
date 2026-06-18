@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   whatsapp_hub_api:
-    image: whatsapp-hub:latest
+    image: integrador-api:latest
     ports:
       - "3000:3000"
     environment:
@@ -19,6 +19,8 @@ services:
       - SOFTDESK_TOKEN=${SOFTDESK_TOKEN}
       - AGENT_SIGNATURE_FORMAT=${AGENT_SIGNATURE_FORMAT}
       - USE_AGENT_FIRST_NAME=${USE_AGENT_FIRST_NAME:-true}
+    depends_on:
+      - postgres
     deploy:
       replicas: 1
       restart_policy:

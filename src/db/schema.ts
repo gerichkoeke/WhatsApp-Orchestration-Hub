@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, boolean, integer } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, boolean, integer, unique } from 'drizzle-orm/pg-core';
 
 export const instances = pgTable('instances', {
   id: serial('id').primaryKey(),
@@ -14,6 +14,41 @@ export const instances = pgTable('instances', {
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
+
+export const conversationTicketLinks = pgTable('conversation_ticket_links', {
+  id: serial('id').primaryKey(),
+  instanceId: integer('instance_id').references(() => instances.id),
+  chatwootAccountId: integer('chatwoot_account_id').notNull(),
+  chatwootConversationId: integer('chatwoot_conversation_id'),
+  chatwootContactId: integer('chatwoot_contact_id'),
+  softdeskTicketId: text('softdesk_ticket_id').notNull(),
+  softdeskTicketCode: text('softdesk_ticket_code'),
+  phoneNumber: text('phone_number'),
+  customerName: text('customer_name'),
+  customerDocument: text('customer_document'),
+  source: text('source').notNull(), // whatsapp/chatwoot/softdesk_web
+  status: text('status').default('active'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const syncedMessages = pgTable('synced_messages', {
+  id: serial('id').primaryKey(),
+  instanceId: integer('instance_id').references(() => instances.id),
+  sourceSystem: text('source_system').notNull(), // chatwoot, softdesk, meta
+  sourceMessageId: text('source_message_id').notNull(),
+  chatwootConversationId: integer('chatwoot_conversation_id'),
+  softdeskTicketId: text('softdesk_ticket_id'),
+  direction: text('direction'), // incoming, outgoing, internal
+  senderType: text('sender_type'), // customer, agent, bot, system
+  senderName: text('sender_name'),
+  message: text('message'),
+  syncedToSoftdesk: boolean('synced_to_softdesk').default(false),
+  syncedToChatwoot: boolean('synced_to_chatwoot').default(false),
+  createdAt: timestamp('created_at').defaultNow(),
+}, (t) => [
+  unique().on(t.sourceSystem, t.sourceMessageId),
+]);
 
 export const processedMessages = pgTable('processed_messages', {
   id: serial('id').primaryKey(),

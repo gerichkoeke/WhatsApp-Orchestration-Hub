@@ -3,7 +3,7 @@
 # Este script realiza o build da imagem Docker localmente.
 # Dê permissão de execução com: chmod +x build-image.sh
 
-IMAGE_NAME="whatsapp-hub"
+IMAGE_NAME="integrador-api"
 IMAGE_TAG="latest"
 FULL_IMAGE_NAME="$IMAGE_NAME:$IMAGE_TAG"
 

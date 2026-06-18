@@ -3,6 +3,7 @@ import { db } from '../db/index.js';
 import { processedMessages, hubLogs, instances } from '../db/schema.js';
 import { sendTextMessage } from '../services/meta.js';
 import { addPrivateNote } from '../services/chatwoot.js';
+import { syncMessageToSoftdesk } from '../services/sync.js';
 import { eq } from 'drizzle-orm';
 import { triggerN8nWebhook } from '../services/n8n.js';
 
@@ -106,28 +107,46 @@ webhooksRouter.post('/chatwoot/:instanceName', async (req, res) => {
   }
   
   const chatwootMessageId = String(payload.id);
-  
-  // Check if we already processed this message
-  if (db) {
+  const conversation = payload.conversation;
+  const phoneNumber = conversation?.meta?.sender?.phone_number;
+  const sender = payload.sender;
+
+  // Check if we already processed this message for outgoing deduplication
+  if (db && payload.message_type === 'outgoing') {
     const existing = await db.select().from(processedMessages).where(eq(processedMessages.chatwootMessageId, chatwootMessageId)).limit(1);
     if (existing && existing.length > 0) {
       return res.status(200).send('Message already processed');
     }
   }
 
-  // Extract necessary details
-  const conversation = payload.conversation;
-  const phoneNumber = conversation?.meta?.sender?.phone_number;
+  // Sync to Softdesk (Both Incoming and Outgoing)
+  if (conversation?.id && payload.content) {
+    const senderName = payload.sender?.name || (payload.message_type === 'incoming' ? 'Cliente' : 'Agente');
+    const systemName = payload.message_type === 'incoming' ? 'WhatsApp' : 'Chatwoot';
+    
+    // We run sync in background so it doesn't block Meta sending
+    syncMessageToSoftdesk(instanceId, conversation.id, chatwootMessageId, senderName, payload.content, systemName)
+      .catch(err => console.error('Softdesk sync error:', err));
+  }
+
+  // If it's incoming, just acknowledge (no Meta send needed)
+  if (payload.message_type === 'incoming') {
+    return res.status(200).send('Incoming message synced via webhook');
+  }
+
+  // Ensure it's an outgoing message
+  if (payload.message_type !== 'outgoing') {
+    return res.status(200).send('Ignoring non-outgoing message');
+  }
+
   if (!phoneNumber) {
     return res.status(200).send('No phone number found');
   }
-  
-  const sender = payload.sender; // Agent
+
   if (!sender) {
     return res.status(200).send('No sender found');
   }
-  
-  // Avoid loop: skip bot messages if needed (e.g., sender.type === 'contact' or 'system')
+
   if (sender.type === 'system' || sender.type === 'contact') {
     return res.status(200).send('Ignoring system/contact message');
   }

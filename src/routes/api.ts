@@ -8,6 +8,64 @@ apiRouter.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+apiRouter.post('/softdesk/:instanceName', async (req, res) => {
+  const { event, ticketId, ticketCode, customerPhone, customerName, agentName } = req.body;
+  const { instanceName } = req.params;
+
+  if (event === 'ticket_assumed') {
+    if (!customerPhone) return res.status(200).send('No phone');
+
+    // Here we should check the link, or create a conversation using chatwoot connector.
+    // For demo/prototype purposes, we send the Meta Template.
+    const message = `Olá, ${customerName}. Seu chamado ${ticketCode} foi assumido por ${agentName} da Armazém Cloud.\n\nPodemos continuar o atendimento por este WhatsApp?`;
+    
+    try {
+      await sendTextMessage(instanceName, customerPhone, message);
+      return res.status(200).send('Notification sent via WhatsApp');
+    } catch(err) {
+      console.error(err);
+      return res.status(500).send('Failed');
+    }
+  }
+
+  res.status(200).send('OK');
+});
+
+// Create link manually via n8n integration when ticket created via Whatsapp
+apiRouter.post('/link/:instanceName', async (req, res) => {
+  const { chatwootAccountId, chatwootConversationId, softdeskTicketId, softdeskTicketCode, phoneNumber, customerName } = req.body;
+  const { instanceName } = req.params;
+
+  try {
+    // In a full implementation, we'd find the instanceId by name
+    const { linkConversationToTicket } = await import('../services/sync.js');
+    const { db } = await import('../db/index.js');
+    const { instances } = await import('../db/schema.js');
+    const { eq } = await import('drizzle-orm');
+    
+    if (db) {
+       const inst = await db.query.instances.findFirst({
+         where: eq(instances.name, instanceName)
+       });
+       if (inst) {
+         await linkConversationToTicket(
+           inst.id,
+           chatwootAccountId,
+           chatwootConversationId,
+           softdeskTicketId,
+           softdeskTicketCode,
+           phoneNumber,
+           customerName,
+           'whatsapp'
+         );
+       }
+    }
+    return res.json({ success: true });
+  } catch(err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 apiRouter.post('/send/text/:instanceName', async (req, res) => {
   const { to, text } = req.body;
   const { instanceName } = req.params;
